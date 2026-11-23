@@ -1,0 +1,5 @@
+{
+  "inspection": {"batch_id": "bypass-shift", "multiplier": 1, "readings": [7, 7, 13]},
+  "primary": {"volume_id": "A", "capacity": 3},
+  "bypass": {"volume_id": "B", "capacity": 1}
+}

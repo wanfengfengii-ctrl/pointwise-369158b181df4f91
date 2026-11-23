@@ -1,0 +1,6 @@
+{
+  "preceding": {"batch_id": "shift-start", "multiplier": 1, "readings": [7]},
+  "inspection": {"batch_id": "day-shift", "multiplier": 2, "readings": [5, 5, 10]},
+  "old_volume": {"volume_id": "A", "capacity": 3},
+  "next_volume": {"volume_id": "B", "capacity": 2}
+}
