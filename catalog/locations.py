@@ -59,3 +59,42 @@ class LocationStore:
             (volume_id,),
         )
         return tuple(ArchiveLocation(*row) for row in rows)
+
+
+class RedundantSlotStore:
+    """Verified physical slots whose ordinal already has an official location.
+
+    A late duplicate slot is still real media usage: it is checked here when
+    the volume retires, but it never changes the ordinal's official location.
+    """
+
+    def __init__(self, db):
+        self.db = db
+
+    def initialize(self):
+        self.db.execute('''
+            CREATE TABLE IF NOT EXISTS redundant_slots (
+                volume_id TEXT NOT NULL REFERENCES volume_registry(volume_id),
+                slot INTEGER NOT NULL CHECK (slot >= 0),
+                job_id INTEGER NOT NULL,
+                ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
+                attempt_id INTEGER NOT NULL REFERENCES transfer_attempts(attempt_id),
+                PRIMARY KEY (volume_id, slot)
+            )
+        ''')
+
+    def record(self, location):
+        self.db.execute(
+            '''INSERT INTO redundant_slots (volume_id, slot, job_id, ordinal, attempt_id)
+               VALUES (?, ?, ?, ?, ?)''',
+            (location.volume_id, location.slot, location.job_id, location.ordinal,
+             location.attempt_id),
+        )
+
+    def for_volume(self, volume_id):
+        rows = self.db.execute(
+            '''SELECT job_id, ordinal, volume_id, slot, attempt_id FROM redundant_slots
+               WHERE volume_id = ? ORDER BY slot''',
+            (volume_id,),
+        )
+        return tuple(ArchiveLocation(*row) for row in rows)

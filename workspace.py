@@ -45,10 +45,11 @@ class Workspace:
 
     def initialize(self):
         from audit.receipts import ReceiptStore
-        from catalog.locations import LocationStore
+        from catalog.locations import LocationStore, RedundantSlotStore
         from catalog.volumes import VolumeRegistry
         from intake.storage import BatchStore
         from transfer.attempts import AttemptStore
+        from transfer.bypass import BypassRegistry
         from transfer.jobs import initialize_jobs
 
         (self.root / 'volumes').mkdir(parents=True, exist_ok=True)
@@ -58,7 +59,9 @@ class Workspace:
                 initialize_jobs(db)
                 VolumeRegistry(db).initialize()
                 AttemptStore(db).initialize()
+                BypassRegistry(db).initialize()
                 LocationStore(db).initialize()
+                RedundantSlotStore(db).initialize()
                 ReceiptStore(db).initialize()
 
     def operation(self):

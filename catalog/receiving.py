@@ -1,4 +1,4 @@
-from catalog.locations import ArchiveLocation, LocationStore
+from catalog.locations import ArchiveLocation, LocationStore, RedundantSlotStore
 from catalog.volumes import VolumeRegistry
 from media.reader import read_attempt_rows
 from media.records import MediumRow
@@ -30,10 +30,17 @@ def _actual_locations(
     return locations
 
 
+def actual_locations(
+    manifest: JobManifest, attempt: TransferAttempt, records: tuple[MediumRow, ...], capacity: int
+):
+    """Verify medium records against the fixed manifest and the registered attempt."""
+    return _actual_locations(manifest, attempt, records, capacity)
+
+
 def confirm_written(workspace, manifest, attempt, records):
     with workspace.center(write=True) as db:
         attempts = AttemptStore(db)
-        if attempts.pending_for_job(manifest.job_id) != attempt:
+        if attempt not in attempts.pending_for_job_all(manifest.job_id):
             raise EvidenceUnavailable('attempt is not the pending operation for this job')
         volume = VolumeRegistry(db).find(attempt.volume_id)
         if volume is None or volume.state != 'mounted':
@@ -52,3 +59,33 @@ def confirm_written(workspace, manifest, attempt, records):
 def recover_pending(workspace, manifest, attempt):
     records = read_attempt_rows(workspace, attempt)
     confirm_written(workspace, manifest, attempt, records)
+
+
+def settle_attempt(workspace, manifest, attempt):
+    """Settle one registered attempt from the physical evidence on its volume.
+
+    The first confirmed read evidence fixes each ordinal's official location;
+    a later verified slot for an already-located ordinal is only a redundant
+    physical write. All of the volume's verified slots, the newly gained
+    official locations and the attempt settlement commit together, so a
+    failure keeps the pending state and every earlier confirmation.
+    """
+    records = read_attempt_rows(workspace, attempt)
+    with workspace.center(write=True) as db:
+        attempts = AttemptStore(db)
+        if attempt not in attempts.pending_for_job_all(manifest.job_id):
+            raise EvidenceUnavailable('attempt is not pending for this job')
+        volume = VolumeRegistry(db).find(attempt.volume_id)
+        if volume is None or volume.state != 'mounted':
+            raise EvidenceUnavailable('pending volume is unavailable')
+        locations = _actual_locations(manifest, attempt, records, volume.capacity)
+        store = LocationStore(db)
+        redundant = RedundantSlotStore(db)
+        official = {location.ordinal for location in store.for_job(manifest.job_id)}
+        for location in locations:
+            if location.ordinal in official:
+                redundant.record(location)
+            else:
+                store.record_actual(location)
+                official.add(location.ordinal)
+        attempts.settle(attempt)

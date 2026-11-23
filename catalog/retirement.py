@@ -1,6 +1,6 @@
 import sqlite3
 
-from catalog.locations import ArchiveLocation, LocationStore
+from catalog.locations import ArchiveLocation, LocationStore, RedundantSlotStore
 from catalog.volumes import VolumeRegistry
 from media.capacity import validate_volume_id
 from media.reader import read_mounted_rows
@@ -20,7 +20,15 @@ def retire(workspace, volume_id):
                     return True
                 if AttemptStore(db).pending_for_volume(volume_id):
                     return False
-                expected = LocationStore(db).for_volume(volume_id)
+                # Every actual slot must be accounted for, including redundant
+                # duplicate slots left behind by a bypass pair.
+                expected = tuple(sorted(
+                    (
+                        *LocationStore(db).for_volume(volume_id),
+                        *RedundantSlotStore(db).for_volume(volume_id),
+                    ),
+                    key=lambda location: location.slot,
+                ))
 
             rows = read_mounted_rows(workspace, volume_id)
             actual = tuple(

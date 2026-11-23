@@ -27,9 +27,12 @@ class AttemptStore:
                 pending INTEGER NOT NULL DEFAULT 1 CHECK (pending IN (0, 1))
             )
         ''')
+        # A bypass pair keeps one pending attempt per (job, volume); older
+        # workspaces carried a single pending attempt per job.
+        self.db.execute('DROP INDEX IF EXISTS one_pending_per_job')
         self.db.execute('''
-            CREATE UNIQUE INDEX IF NOT EXISTS one_pending_per_job
-            ON transfer_attempts(job_id) WHERE pending = 1
+            CREATE UNIQUE INDEX IF NOT EXISTS one_pending_attempt_per_volume
+            ON transfer_attempts(job_id, volume_id) WHERE pending = 1
         ''')
         self.db.execute('''
             CREATE INDEX IF NOT EXISTS pending_attempts_by_volume
@@ -53,6 +56,25 @@ class AttemptStore:
         if row is None:
             return None
         return TransferAttempt(*row)
+
+    def pending_for_job_all(self, job_id):
+        rows = self.db.execute(
+            '''SELECT attempt_id, job_id, volume_id, start_ordinal, stop_ordinal
+               FROM transfer_attempts WHERE pending = 1 AND job_id = ? ORDER BY attempt_id''',
+            (job_id,),
+        )
+        return tuple(TransferAttempt(*row) for row in rows)
+
+    def find(self, attempt_id):
+        row = self.db.execute(
+            '''SELECT attempt_id, job_id, volume_id, start_ordinal, stop_ordinal, pending
+               FROM transfer_attempts WHERE attempt_id = ?''',
+            (attempt_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        *fields, pending = row
+        return TransferAttempt(*fields), bool(pending)
 
     def pending_for_volume(self, volume_id):
         rows = self.db.execute(

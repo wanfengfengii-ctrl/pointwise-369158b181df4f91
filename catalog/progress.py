@@ -2,6 +2,7 @@ from dataclasses import dataclass
 
 from catalog.locations import ArchiveLocation, LocationStore
 from transfer.attempts import AttemptStore
+from transfer.bypass import BypassRegistry
 from transfer.jobs import load_job
 
 
@@ -20,8 +21,11 @@ class CatalogProgress:
 def read_progress(db, manifest):
     job_id = manifest.job_id
     total = len(manifest.rows)
-    if AttemptStore(db).pending_for_job(job_id) is not None:
+    pending = AttemptStore(db).pending_for_job_all(job_id)
+    if pending and BypassRegistry(db).find(job_id) is None:
         return CatalogProgress.unconfirmed(job_id, total)
+    # A bypass-registered job reports its confirmed rows even while the other
+    # volume of the pair is still pending; unconfirmed rows cannot be issued.
     locations = LocationStore(db).for_job(job_id)
     if len(locations) > total or any(
         location.ordinal != ordinal or manifest.rows[ordinal].ordinal != ordinal
